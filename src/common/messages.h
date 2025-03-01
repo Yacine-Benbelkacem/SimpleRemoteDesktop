@@ -11,6 +11,10 @@
 // Change History (most recent first):
 ///////////////////////////////////////////////////////////////////////////////////
 
+#ifndef MESSAGES_H
+#define MESSAGES_H
+
+#define SOCKET_ERROR        -1
 #define NET_PACKET_SIZE 1024
 
 #pragma pack(1)
@@ -77,3 +81,5 @@ int waitandreceivepacket(int hSocket, keymng * key, void * buffer,int buffersize
 int generatekey(keymng * key, char * password);
 
 int genrandiv(keymng * key);
+
+#endif // MESSAGES_H
