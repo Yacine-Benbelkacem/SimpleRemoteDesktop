@@ -48,267 +48,34 @@
 #include "utils.h"
 #include "cmd_param.h"
 
+#ifdef WAYLAND_ENV
+#include <pixman.h>
+#include "wayland_screenshot.h"
+#endif
+#include "remote_controls_handler.h"
+
 #if defined(__WIN32__)
     const char* inet_ntop(int af, const void* src, char* dst, size_t size);
     int inet_pton(int af, const char* src, void* dst);
 #endif
 
-typedef struct thread_params_
-{
-    int hSocket;
-    int tid;
-    char clientname[2048];
-    char clientip[32];
-    keymng * key;
-}thread_params;
-
-void *NetRx_Thread(void *threadid)
-{
-    int i,ret;
-    unsigned char rx_buffer[NET_PACKET_SIZE];
-    int hSocket;
-    struct timeval curtime;
-    time_t start_time;
-    int recverror;
-    struct timeval tv;
-    int ofs;
-
-    int err_loop_cnt;
-    message_header header;
-    char systemcmd[1024];
-
-    scancodekeybevent * kevt;
-    mouseevent * mevt;
-    execcmd * execevt;
-
-    thread_params * tp;
-
-    tp = (thread_params*)threadid;
-
-    pthread_detach(pthread_self());
-
-    hSocket=tp->hSocket;
-    recverror = 0;
-
-    start_time = time(NULL);
-
-    // wait until either socket has data ready to be recv()d (timeout 10.5 secs)
-
-    tv.tv_sec = 20;
-    tv.tv_usec = 0;
-    setsockopt(hSocket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
-
-    if(1)
-    {
-        printf("[%s] Connected\r\n",curdatestr());
-
-        gettimeofday(&curtime,NULL);
-
-        do
-        {
-            err_loop_cnt = 0;
-
-            memset((char*)tp->key->lastrx,0,128/8);
-
-            recverror = waitandreceivepacket(hSocket, tp->key, rx_buffer,NET_PACKET_SIZE);
-
-            if(!recverror)
-            {
-                memcpy((void*)&header, (void*)&rx_buffer, sizeof(message_header) );
-                if( header.sign == 0x41544144 )
-                {
-                    unsigned char * buf;
-
-                    buf = malloc(header.user_size);
-                    i = sizeof(message_header);
-                    ofs = 0;
-
-                    while(ofs < header.user_size && !recverror )
-                    {
-                        while(ofs < header.user_size && i < NET_PACKET_SIZE )
-                        {
-                            buf[ofs] = rx_buffer[i];
-                            ofs++;
-                            i++;
-                        }
-                        i = 0;
-
-                        if( ofs < header.user_size )
-                            recverror = waitandreceivepacket(hSocket, tp->key, rx_buffer, NET_PACKET_SIZE);
-                    }
-
-                    switch(header.type)
-                    {
-                        case MSGTYPE_PING:
-                            //printf("ping received ! : %s \n",buf);
-                        break;
-
-                        case MSGTYPE_JPEGFULLSCREEN: // JPEG full screen
-/*                          xsize = 0;
-                            ysize = 0;
-                            pic_ptr = NULL;
-                            jpeg_decompress(buf, header.user_size, &pic_ptr, &xsize, &ysize);
-
-                            if(tp->videobuf)
-                            {
-                                memcpy(tp->videobuf,pic_ptr,xsize*ysize*3);
-                                tp->xsize = xsize;
-                                tp->ysize = ysize;
-                            }
-
-                            free(pic_ptr);*/
-                        break;
-
-                        case MSGTYPE_SCANCODE_KEYBOARD_EVENT: // Keyboard scancode(s)
-                            kevt = (scancodekeybevent *)buf;
-
-                            switch(kevt->state)
-                            {
-                                case 0x00:
-                                    for(int i=0;i<kevt->cnt;i++)
-                                    {
-                                        sprintf(systemcmd,"xdotool key 0x%X", kevt->buf[i]);
-                                        ret = system(systemcmd);
-                                        if(ret)
-                                            printf("system : %s failed (%d)\n",systemcmd, ret);
-                                    }
-                                break;
-                                case 0x01:
-                                    for(int i=0;i<kevt->cnt;i++)
-                                    {
-                                        sprintf(systemcmd,"xdotool keydown 0x%X", kevt->buf[i]);
-                                        ret = system(systemcmd);
-                                        if(ret)
-                                            printf("system : %s failed (%d)\n",systemcmd, ret);
-                                    }
-                                break;
-                                case 0x02:
-                                    for(int i=0;i<kevt->cnt;i++)
-                                    {
-                                        sprintf(systemcmd,"xdotool keyup 0x%X", kevt->buf[i]);
-                                        ret = system(systemcmd);
-                                        if(ret)
-                                            printf("system : %s failed (%d)\n",systemcmd, ret);
-                                    }
-                                break;
-                            }
-                        break;
-
-                        case MSGTYPE_MOUSE_EVENT: // Mouse position / buttons state
-
-                            mevt = (mouseevent *)buf;
-
-                            sprintf(systemcmd,"xdotool mousemove %d %d", mevt->xpos, mevt->ypos);
-                            ret = system(systemcmd);
-                            if(ret)
-                                printf("system : %s failed (%d)\n",systemcmd, ret);
-
-                            if(mevt->click)
-                            {
-                                if( mevt->click & 0x01 )
-                                {
-                                    sprintf(systemcmd,"xdotool mousedown 1" );
-
-                                    if(mevt->click & 0x10)
-                                        sprintf(systemcmd,"xdotool click --repeat 1 1" );
-
-                                    ret = system(systemcmd);
-                                    if(ret)
-                                        printf("system : %s failed (%d)\n",systemcmd, ret);
-
-                                }
-
-                                if( mevt->click & 0x02 )
-                                {
-                                    sprintf(systemcmd,"xdotool mouseup 1" );
-
-                                    ret = system(systemcmd);
-                                    if(ret)
-                                        printf("system : %s failed (%d)\n",systemcmd, ret);
-                                }
-
-                                if( mevt->click & 0x04 )
-                                {
-                                    sprintf(systemcmd,"xdotool mousedown 3" );
-
-                                    if(mevt->click & 0x10)
-                                        sprintf(systemcmd,"xdotool click --repeat 1 3" );
-
-                                    ret = system(systemcmd);
-                                    if(ret)
-                                        printf("system : %s failed (%d)\n",systemcmd, ret);
-                                }
-
-                                if( mevt->click & 0x08 )
-                                {
-                                    sprintf(systemcmd,"xdotool mouseup 3" );
-
-                                    ret = system(systemcmd);
-                                    if(ret)
-                                        printf("system : %s failed (%d)\n",systemcmd, ret);
-                                }
-                            }
-
-                        break;
-
-                        case MSGTYPE_EXEC:
-                            execevt = (execcmd *)buf;
-
-                            memset(systemcmd,0,sizeof(systemcmd));
-                            for(int i=0;i<execevt->cnt && (i < sizeof(systemcmd) -  1);i++)
-                            {
-                                systemcmd[i] = execevt->buf[i];
-                            }
-
-                            ret = system(systemcmd);
-                            if(ret)
-                                printf("system : %s failed (%d)\n",systemcmd, ret);
-                        break;
-                    }
-
-                    free(buf);
-
-                }
-            }
-            else
-            {
-                printf("[%s] Recv Error. Connection Lost... \r\n",curdatestr());
-            }
-
-        }while(err_loop_cnt<32 && !recverror && ( (time(NULL) - start_time) < 3600));
-    }
-    else
-    {
-
-    }
-
-    printf("[%s] Exit Server thread...\r\n",curdatestr());
-
-/*
-thread_exit:
-
-    if(hSocket >= 0)
-    {
-        if(close(hSocket) == SOCKET_ERROR)
-        {
-            printf("[%s] Could not close socket\r\n",curdatestr());
-        }
-    }
-*/
-    pthread_exit(NULL);
-
-    return NULL;
-}
 
 int main (int argc, char ** argv)
 {
     int ret;
+    
+    #ifdef WAYLAND_ENV
+        pixman_image_t * buf;
+    #else
+        uint8_t * buf;
+    #endif
 
-    uint8_t * buf;
     int xsize;
     int ysize;
 
     pthread_t threads;
+    pthread_attr_t thread_attr;  
+
     int i, rc;
     unsigned char * outbuffer;
     unsigned long outsize;
@@ -407,50 +174,78 @@ int main (int argc, char ** argv)
     tp.key = &key;
 
     if(!quiet)
-        printf("[%s] Starting RX thread...\r\n",curdatestr());
+        printf("[%s] Starting RX controls thread...\r\n",curdatestr());
 
-    rc = pthread_create(&threads, NULL, NetRx_Thread, (void *)&tp);
+    if(pthread_attr_init(&thread_attr) != 0){
+        printf("\n[%s] Error ! pthread_attr_init failed !\n",curdatestr());
+        return 1;
+    }
+
+    pthread_attr_setdetachstate(&thread_attr,PTHREAD_CREATE_DETACHED);
+
+    //rc = pthread_create(&threads, &thread_attr, controls_handler, (void *)&tp);
     if(rc)
     {
         printf("[%s] Error ! Can't Create the thread ! (Error %d)\r\n",curdatestr(),rc);
     }
 
     i = 0;
+    /*
+    * For fast local area networks, we have to wait
+    * server SDL initialization. 
+    */
+    sleep(3);
     for(;;)
     {
-        ret = takescreenshot(buf, &xsize, &ysize);
-        if(ret == -2)
-        {
-            free(buf);
-            buf = malloc(sizeof(uint8_t) * 3 * xsize * ysize);
-        }
-        else
-        {
-            jpeg_compress(&outbuffer, &outsize, buf, xsize, ysize, 30);
-
-            send_data(sockfd, &key, outbuffer, outsize,MSGTYPE_JPEGFULLSCREEN);
-
-            getmouseposition(&mouse_x,&mouse_y);
-
-            if(
-                (mouse_x != old_mouse_x) ||
-                (mouse_y != old_mouse_y)
-            )
+        #ifdef WAYLAND_ENV
+            ret = wayland_screenshot(&buf);
+            if(ret > 0)
             {
-                mevt.xpos = mouse_x;
-                mevt.ypos = mouse_y;
-                mevt.click = 0;
-
-                send_data(sockfd, &key,(unsigned char*)&mevt, sizeof(mouseevent),MSGTYPE_MOUSE_EVENT);
-
-                old_mouse_x = mouse_x;
-                old_mouse_y = mouse_y;
+                //jpeg_compress(&outbuffer, &outsize, buf, xsize, ysize, 30);
+                write_to_jpeg_stream(&outbuffer, &outsize, buf,100);
+    
+                send_data(sockfd, &key, outbuffer, outsize-1, MSGTYPE_JPEGFULLSCREEN);            
+                
+                usleep(1000);
             }
+            else 
+            {
+        #else
+            ret = takescreenshot(buf, &xsize, &ysize);
+            if(ret == -2)
+            {
+                free(buf);
+                buf = malloc(sizeof(uint8_t) * 3 * xsize * ysize);
+            }
+            else
+            {
+                jpeg_compress(&outbuffer, &outsize, buf, xsize, ysize, 30);
 
-            usleep(1000 * 100);
+                send_data(sockfd, &key, outbuffer, outsize,MSGTYPE_JPEGFULLSCREEN);
 
-            free(outbuffer);
-        }
+                getmouseposition(&mouse_x,&mouse_y);
+
+                if(
+                    (mouse_x != old_mouse_x) ||
+                    (mouse_y != old_mouse_y)
+                )
+                {
+                    mevt.xpos = mouse_x;
+                    mevt.ypos = mouse_y;
+                    mevt.click = 0;
+
+                    send_data(sockfd, &key,(unsigned char*)&mevt, sizeof(mouseevent),MSGTYPE_MOUSE_EVENT);
+
+                    old_mouse_x = mouse_x;
+                    old_mouse_y = mouse_y;
+                }
+
+                usleep(1000 * 100);
+
+        #endif
+        
+                free(outbuffer);
+            }
         i++;
     }
 
