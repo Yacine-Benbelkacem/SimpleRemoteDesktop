@@ -492,6 +492,8 @@ void *NetRx_Thread(void *threadid)
 
         memset((char*)tp->key->lastrx,0,128/8);
 
+	    printf("Waiting Packets ... \n");
+
         recverror = waitandreceivepacket(hSocket, tp->key, rx_buffer,NET_PACKET_SIZE);
 
         if(!recverror)
@@ -690,8 +692,7 @@ int main(int argc, char* argv[])
     printf("[%s] Binding to port %d\r\n",curdatestr(),nHostPort);
 
     /* bind to a port */
-    if(bind(hServerSocket,(struct sockaddr*)&Address,sizeof(Address))
-                        == SOCKET_ERROR)
+    if(bind(hServerSocket,(struct sockaddr*)&Address,sizeof(Address)) < 0)
     {
         printf("[%s] Could not connect to host\r\n",curdatestr());
         return 0;
@@ -731,8 +732,12 @@ int main(int argc, char* argv[])
     {
         printf("[%s] Waiting for a connection\r\n",curdatestr());
         /* get the connected socket */
-        hSocket=accept(hServerSocket,(struct sockaddr*)&Address,(socklen_t *)&nAddressSize);
+        hSocket=accept(hServerSocket,(struct sockaddr*)NULL,NULL);
 
+        if(hSocket < 0){
+            printf("Timeout\n");
+            continue;
+        }
         //int nBytes = 512;
         //setsockopt(hSocket, SOL_SOCKET, SO_RCVLOWAT,(const char *) &nBytes, sizeof(int));
         //setsockopt(hSocket, SOL_SOCKET, SO_SNDLOWAT,(const char *) &nBytes, sizeof(int));
