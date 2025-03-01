@@ -15,7 +15,7 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#ifdef __LINUX__
+#ifdef __unix__
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
