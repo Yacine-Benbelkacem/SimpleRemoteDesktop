@@ -183,7 +183,7 @@ int main (int argc, char ** argv)
 
     pthread_attr_setdetachstate(&thread_attr,PTHREAD_CREATE_DETACHED);
 
-    //rc = pthread_create(&threads, &thread_attr, controls_handler, (void *)&tp);
+    rc = pthread_create(&threads, &thread_attr, controls_handler, (void *)&tp);
     if(rc)
     {
         printf("[%s] Error ! Can't Create the thread ! (Error %d)\r\n",curdatestr(),rc);
@@ -194,7 +194,7 @@ int main (int argc, char ** argv)
     * For fast local area networks, we have to wait
     * server SDL initialization. 
     */
-    sleep(3);
+    sleep(1);
     for(;;)
     {
         #ifdef WAYLAND_ENV
