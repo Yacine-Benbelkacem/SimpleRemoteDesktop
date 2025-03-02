@@ -52,14 +52,12 @@ int write_to_jpeg_stream(unsigned char ** outbuffer, unsigned long * len, void *
 
 	jpeg_start_compress(&cinfo, TRUE);
 
-	printf("image stride %d \n", pixman_image_get_stride(image));
 	while (cinfo.next_scanline < cinfo.image_height) {
 		row_pointer[0] = (unsigned char *)pixman_image_get_data(image)
 			+ (cinfo.next_scanline * pixman_image_get_stride(image));
 		(void) jpeg_write_scanlines(&cinfo, row_pointer, 1);
 	}
 
-	printf("len == %ld \n",*len);
 	jpeg_finish_compress(&cinfo);
 	jpeg_destroy_compress(&cinfo);
 
